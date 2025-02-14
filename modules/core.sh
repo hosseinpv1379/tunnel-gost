@@ -7,42 +7,59 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Check root privileges
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        echo -e "${RED}This script must be run as root${NC}"
-        exit 1
+# Create SIT tunnel function
+create_sit_tunnel() {
+    local name=$1
+    local local_ip=$2
+    local remote_ip=$3
+    
+    echo "Preparing system..."
+    modprobe -r sit
+    sleep 1
+    modprobe sit
+    sleep 1
+    
+    ip link set sit0 down 2>/dev/null
+    ip tunnel del sit0 2>/dev/null
+    sleep 1
+    
+    echo "Creating tunnel..."
+    if ! ip tunnel add ${name} mode sit remote ${remote_ip} local ${local_ip} ttl 255; then
+        echo -e "${RED}Failed to create tunnel${NC}"
+        return 1
     fi
+    
+    ip link set ${name} up
+    local local_ipv6=$(printf "fde8:b030:%x::%x" $((RANDOM % 65535)) $((RANDOM % 65535)))
+    ip -6 addr add ${local_ipv6}/64 dev ${name}
+    ip link set dev ${name} mtu 1400
+    
+    ip -6 route add fde8:b030::/32 dev ${name}
+    echo 1 > /proc/sys/net/ipv6/conf/all/forwarding
+    
+    echo -e "${GREEN}Tunnel created successfully${NC}"
+    echo -e "IPv6: ${local_ipv6}"
 }
 
-# Initialize system
-init_system() {
-    # Load required modules
-    for module in sit gre ipip ip6_tunnel ip_gre; do
-        modprobe $module 2>/dev/null
-    done
-
-    # Enable IPv4/IPv6 forwarding
-    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
-    sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1
+# List tunnels function
+list_tunnels() {
+    echo -e "${BLUE}Active tunnels:${NC}"
+    ip tunnel show
+    echo -e "\n${BLUE}IPv6 addresses:${NC}"
+    ip -6 addr show
 }
 
-# Generate random IPv6 address
-generate_random_ipv6() {
-    printf "fde8:b030:%x::%x" $((RANDOM % 65535)) $((RANDOM % 65535))
+# Delete tunnel function
+delete_tunnel() {
+    local tunnel_name=$1
+    ip link set ${tunnel_name} down
+    ip tunnel del ${tunnel_name}
+    echo -e "${GREEN}Tunnel deleted${NC}"
 }
 
-# Validate IP address
-validate_ip() {
-    local ip=$1
-    if [[ $ip =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        IFS='.' read -r -a octets <<< "$ip"
-        for octet in "${octets[@]}"; do
-            if [[ $octet -gt 255 || $octet -lt 0 ]]; then
-                return 1
-            fi
-        done
-        return 0
-    fi
-    return 1
+# Test tunnel function
+test_tunnel() {
+    local tunnel_name=$1
+    ip link show ${tunnel_name}
+    ip addr show ${tunnel_name}
 }
