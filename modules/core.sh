@@ -1,95 +1,134 @@
 #!/bin/bash
 
-# Core module for Tunnel Manager
-# Handles basic system functions and initialization
+# تنظیمات رنگ ها برای خروجی
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Global variables
-declare -A TUNNEL_TYPES=(
-    ["sit"]="IPv6-in-IPv4 Tunnel"
-    ["ipip"]="IPv4-in-IPv4 Tunnel"
-    ["gre"]="GRE Tunnel"
-    ["gretap"]="GRETAP Tunnel"
-    ["ip6gre"]="IPv6 GRE Tunnel"
-    ["ipip6"]="IPv4-in-IPv6 Tunnel"
-    ["ip6ip6"]="IPv6-in-IPv6 Tunnel"
-)
-
-# Required kernel modules
-REQUIRED_MODULES=(
-    "sit"
-    "ipip"
-    "gre"
-    "ip6_tunnel"
-    "ip_gre"
-    "ip6gre"
-    "xfrm4_tunnel"
-    "xfrm6_tunnel"
-)
-
-# System initialization
-init_system() {
-    check_root
-    load_modules
-    optimize_system
-    init_directories
+# تابع ساخت تانل SIT
+create_sit_tunnel() {
+    local name=$1
+    local local_ip=$2
+    local remote_ip=$3
+    
+    echo "در حال بررسی آدرس‌های IP..."
+    if ! validate_ip "$local_ip" "ipv4" || ! validate_ip "$remote_ip" "ipv4"; then
+        echo -e "${RED}آدرس IP نامعتبر است${NC}"
+        return 1
+    }
+    
+    # آماده‌سازی سیستم
+    prepare_sit_tunnel
+    
+    echo "در حال ساخت تانل..."
+    if ! ip tunnel add ${name} mode sit remote ${remote_ip} local ${local_ip} ttl 255; then
+        echo -e "${RED}خطا در ساخت تانل${NC}"
+        return 1
+    fi
+    
+    # تنظیم تانل
+    ip link set ${name} up
+    local local_ipv6=$(generate_random_ipv6)
+    ip -6 addr add ${local_ipv6}/64 dev ${name}
+    ip link set dev ${name} mtu 1400
+    
+    # پیکربندی مسیریابی
+    configure_ipv6_routing "$name" "$local_ipv6"
+    
+    # ذخیره تنظیمات
+    mkdir -p "/etc/tunnel-manager/${name}"
+    cat > "/etc/tunnel-manager/${name}/config" <<EOF
+TYPE=sit
+LOCAL_IP=$local_ip
+REMOTE_IP=$remote_ip
+LOCAL_IPv6=$local_ipv6
+MTU=1400
+CREATED_AT=$(date '+%Y-%m-%d %H:%M:%S')
+EOF
+    
+    echo -e "${GREEN}تانل با موفقیت ساخته شد${NC}"
+    echo -e "نام تانل: ${name}"
+    echo -e "IPv6 محلی: ${local_ipv6}"
+    echo -e "MTU: 1400"
 }
 
-# Check root privileges
-check_root() {
+# تابع اصلی برای شروع برنامه
+init_system() {
+    # بررسی دسترسی root
     if [[ $EUID -ne 0 ]]; then
-        echo "This script must be run as root"
+        echo -e "${RED}این اسکریپت باید با دسترسی root اجرا شود${NC}"
         exit 1
     fi
+    
+    # ایجاد دایرکتوری‌های مورد نیاز
+    mkdir -p /etc/tunnel-manager
+    mkdir -p /var/log/tunnel-manager
 }
 
-# Load required kernel modules
-load_modules() {
-    for module in "${REQUIRED_MODULES[@]}"; do
-        if ! lsmod | grep -q "^$module"; then
-            modprobe $module
-            log "INFO" "Loaded kernel module: $module"
-        fi
-    done
+# تابع نمایش منو
+show_menu() {
+    clear
+    echo -e "${BLUE}=== سیستم مدیریت تانل ===${NC}"
+    echo "1) ساخت تانل جدید"
+    echo "2) نمایش تانل‌های فعال"
+    echo "3) حذف تانل"
+    echo "4) تست تانل"
+    echo "5) نمایش آمار"
+    echo "6) پشتیبان‌گیری"
+    echo "7) خروج"
+    echo -e "${BLUE}=============================${NC}"
 }
 
-# Optimize system for tunneling
-optimize_system() {
-    cat > /etc/sysctl.d/99-tunnel-optimize.conf <<EOF
-# Network Buffer Optimization
-net.core.rmem_max = 26214400
-net.core.wmem_max = 26214400
-net.core.rmem_default = 16777216
-net.core.wmem_default = 16777216
-net.ipv4.tcp_rmem = 4096 87380 16777216
-net.ipv4.tcp_wmem = 4096 87380 16777216
-
-# IPv4 Configuration
-net.ipv4.ip_forward = 1
-net.ipv4.conf.all.forwarding = 1
-net.ipv4.conf.default.forwarding = 1
-net.ipv4.conf.all.rp_filter = 0
-net.ipv4.conf.default.rp_filter = 0
-
-# IPv6 Configuration
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.default.forwarding = 1
-net.ipv6.conf.all.accept_ra = 0
-net.ipv6.conf.default.accept_ra = 0
-
-# TCP Optimization
-net.ipv4.tcp_window_scaling = 1
-net.ipv4.tcp_timestamps = 1
-net.ipv4.tcp_sack = 1
-net.ipv4.tcp_congestion_control = cubic
-net.core.netdev_max_backlog = 16384
-EOF
-
-    sysctl -p /etc/sysctl.d/99-tunnel-optimize.conf
+# بقیه توابع مورد نیاز
+prepare_sit_tunnel() {
+    echo "در حال آماده‌سازی سیستم..."
+    
+    modprobe -r sit
+    sleep 1
+    modprobe sit
+    sleep 1
+    
+    sysctl -w net.ipv4.ip_forward=1
+    sysctl -w net.ipv6.conf.all.forwarding=1
+    
+    ip link set sit0 down 2>/dev/null
+    ip tunnel del sit0 2>/dev/null
+    sleep 1
 }
 
-# Initialize directories
-init_directories() {
-    mkdir -p "/etc/tunnel-manager/tunnels"
-    mkdir -p "/var/log/tunnel-manager"
-    mkdir -p "/var/run/tunnel-manager"
+generate_random_ipv6() {
+    printf "fde8:b030:%x::%x" $((RANDOM % 65535)) $((RANDOM % 65535))
+}
+
+validate_ip() {
+    local ip=$1
+    local type=$2
+    
+    case $type in
+        "ipv4")
+            if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+                return 0
+            fi
+            ;;
+        "ipv6")
+            if [[ $ip =~ ^([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}$ ]]; then
+                return 0
+            fi
+            ;;
+    esac
+    return 1
+}
+
+configure_ipv6_routing() {
+    local tunnel_name=$1
+    local local_ipv6=$2
+    
+    ip -6 route add ${local_ipv6}/64 dev ${tunnel_name}
+    ip -6 route add fde8:b030::/32 dev ${tunnel_name}
+    
+    sysctl -w net.ipv6.conf.${tunnel_name}.accept_ra=0
+    sysctl -w net.ipv6.conf.${tunnel_name}.autoconf=0
+    sysctl -w net.ipv6.conf.${tunnel_name}.forwarding=1
 }
