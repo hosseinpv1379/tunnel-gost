@@ -1,0 +1,35 @@
+2. Now, let's create the installation script `install.sh`:
+```bash
+#!/bin/bash
+
+# Install script for Tunnel Manager
+
+# Check root privileges
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root"
+    exit 1
+fi
+
+# Base directories
+INSTALL_DIR="/usr/local/tunnel-manager"
+CONFIG_DIR="/etc/tunnel-manager"
+LOG_DIR="/var/log/tunnel-manager"
+
+# Create directories
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$CONFIG_DIR"
+mkdir -p "$LOG_DIR"
+
+# Copy files
+cp -r modules/ "$INSTALL_DIR/"
+cp -r scripts/ "$INSTALL_DIR/"
+cp tunnelmanager.sh "$INSTALL_DIR/"
+
+# Create symlink
+ln -sf "$INSTALL_DIR/tunnelmanager.sh" /usr/local/bin/tunnelmanager
+
+# Set permissions
+chmod +x "$INSTALL_DIR/tunnelmanager.sh"
+chmod +x "$INSTALL_DIR/scripts/"*.sh
+
+echo "Installation completed successfully"
