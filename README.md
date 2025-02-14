@@ -18,6 +18,6 @@ A comprehensive tunnel management system for Linux, supporting multiple tunnel t
 
 ## Installation
 ```bash
-git clone https://github.com/yourusername/tunnel-manager
-cd tunnel-manager
+git clone https://github.com/hosseinpv1379/tunnel-gost
+cd tunnel-gost
 sudo ./install.sh
