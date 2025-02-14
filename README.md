@@ -1,14 +1,13 @@
 # Advanced Tunnel Manager
 
-A comprehensive tunnel management system for Linux, supporting multiple tunnel types and advanced networking features.
+A professional-grade tunnel management system for Linux, supporting multiple tunnel types (SIT, GRE, IPIP) and advanced networking features.
 
 ## Features
-- Multiple tunnel protocols (SIT, GRE, IPIP, etc.)
+- Multiple tunnel protocols support
 - Advanced monitoring and auto-recovery
 - Performance optimization
 - Traffic shaping and QoS
 - Backup and restore functionality
-- Security features
 
 ## Requirements
 - Linux kernel 3.x or higher
@@ -16,8 +15,9 @@ A comprehensive tunnel management system for Linux, supporting multiple tunnel t
 - iproute2
 - iptables
 
-## Installation
+## Quick Start
 ```bash
 git clone https://github.com/hosseinpv1379/tunnel-gost
 cd tunnel-gost
-sudo ./install.sh
+chmod +x tunnelmanager.sh
+sudo ./tunnelmanager.sh
